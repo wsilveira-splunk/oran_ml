@@ -1,19 +1,14 @@
 import docker
 import json
-import time
-import subprocess
-import io
 import multiprocessing
 
 
-def get_container_info(container, container_status_ret):
+def get_container_info(container, ret):
 
     # get container status dict
     container_stats = container.stats(stream=False)
 
     container_status = dict()
-    #container_status['name'] = container_stats['name']
-    #container_status['id'] = container_status['id']
 
     container_name = container_stats['name']
     container_status[container_name] = dict()
@@ -35,7 +30,6 @@ def get_container_info(container, container_status_ret):
     perc_cpu_usage = (delta_cpu_usage /
                       delta_system_cpu_usage) * per_cpu_usage_len * 100
 
-    #container_status['perc_cpu_usage'] = round(perc_cpu_usage, 2)
     container_status[container_name]['perc_cpu_usage'] = round(
         perc_cpu_usage, 2)
 
@@ -46,22 +40,18 @@ def get_container_info(container, container_status_ret):
 
     perc_mem_usage = (cur_mem_usage / max_memory_available) * 100
 
-    #container_status['perc_mem_usage'] = round(perc_mem_usage, 2)
     container_status[container_name]['perc_mem_usage'] = round(
         perc_mem_usage, 2)
 
     # calc net traffic
-    #container_status['rx_bytes'] = container_stats['networks']['eth0']['rx_bytes']
     container_status[container_name]['rx_bytes'] = container_stats['networks'][
         'eth0']['rx_bytes']
-    #container_status['tx_bytes'] = container_stats['networks']['eth0']['tx_bytes']
     container_status[container_name]['tx_bytes'] = container_stats['networks'][
         'eth0']['tx_bytes']
 
-    container_status_ret[container_name] = container_status[container_name]
-
-    #return container_status
-
+    # create a entry in the return dictionary with the container name
+    # and pass all info
+    ret[container_name] = container_status[container_name]
 
 if __name__ == '__main__':
 
@@ -73,23 +63,23 @@ if __name__ == '__main__':
     container_list = client.containers.list()
 
     # get multiprocessing manager to return collected info
-    # in a threaded fashion
+    # in a parallel fashion
     manager = multiprocessing.Manager()
     container_info = manager.dict()
 
     while (True):
 
-        thread_list = []
+        proc_list = []
         for container in container_list:
-            # run in thread fashion to collect info faster
+            # run in processes fashion to collect info faster
             p = multiprocessing.Process(target=get_container_info,
                                         args=(container, container_info))
-            thread_list.append(p)
+            proc_list.append(p)
             p.start()
 
-        for thread in thread_list:
-            p.join()
+        for proc in proc_list:
+            # join and kill the process
+            proc.join()
+            proc.terminate()
 
         print(json.dumps(container_info.copy(), indent=4))
-
-    #print(json.dumps(client.containers.list()[3].stats(stream=False), indent=4))
