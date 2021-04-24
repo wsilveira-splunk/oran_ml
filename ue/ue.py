@@ -3,101 +3,124 @@ import json
 import random
 import multiprocessing
 import string
+import time
 
 from datetime import datetime
 
-HELIX_URL = "http://143.107.145.46:1026/v2/entities/"
+ORAN_BASE_URL = "http://143.107.145.46:1026/v2/entities/"
 
 UE_TYPE = ['eMMB', 'mMTC', 'URLLC']
 UE_PACKET_TYPE = ['plane:control', 'plane:user']
+DEV_ID = 'dev_id:'
+ATTRS_PACKET = '/attrs/packet'
 
-def ue_descriptor_init_rand():
+class UserEquipment():
 
-    ue_descriptor = dict()
-    ue_descriptor['id'] = random.randint(1, 1000)
-    ue_descriptor['type'] = UE_TYPE[random.randint(0, len(UE_TYPE) - 1)]
-    ue_descriptor['packet_type'] = UE_PACKET_TYPE[random.randint(0, len(UE_PACKET_TYPE) - 1)]
+    def __init__(self, oran_base_url):
+        self.ue_list = list()
+        self.oran_base_url = oran_base_url
 
-    packet_size = 0
-    if (ue_descriptor['packet_type'] == 'plane:control'):
-        packet_size = 10
-    elif (ue_descriptor['type'] == 'eMMB'):
-        packet_size = random.randint(100, 200)
-    elif (ue_descriptor['type'] == 'mMTC'):
-        packet_size = random.randint(4, 7)
-    elif (ue_descriptor['type'] == 'URLLC'):
-        packet_size = random.randint(2, 4)        
+    def ue_creation(self, device_descriptor):
+        payload = dict()
+        payload['id'] = DEV_ID + str(device_descriptor['id'])
+        payload['type'] = device_descriptor['type']
+        payload['packet'] = dict()
+        payload['packet']['type'] = device_descriptor['packet_type']
+        payload['packet']['value'] = device_descriptor['packet_data']
 
-    letters = string.ascii_letters
-    random_str = ''.join(random.choice(letters) for i in range(packet_size))
-    ue_descriptor['packet_data'] = datetime.now().strftime('%b %d %Y %H:%M:%S') + ' - ' + random_str
+        try:
+            r = requests.post(self.oran_base_url, json=payload)
 
-    return ue_descriptor
+            r.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            return False, e
 
+        # add created ue
+        self.ue_list.append(payload.copy())
 
-def ue_creation(device_descriptor):
+        return True, None
 
-    payload = dict()
-    payload['id'] = 'dev_id:' + str(device_descriptor['id'])
-    payload['type'] = device_descriptor['type']
-    payload['packet'] = dict()
-    payload['packet']['type'] = device_descriptor['packet_type']
-    payload['packet']['value'] = device_descriptor['packet_data']
+    def ue_deletion(self):
+        self.ue_list = list()
 
-    try:
-        r = requests.post(HELIX_URL, json=payload)
+    def ue_created(self, id):
+        try:
+            r = requests.get(self.oran_base_url + DEV_ID + str(id))
+            r.raise_for_status()
+        except:
+            return False
 
-        r.raise_for_status()
-    except requests.exceptions.HTTPError as e:
-        return False, e
+        return True
 
-    return True, None
+    def ue_tx_packet(self, id, data):
+        try:
+            r = requests.put(self.oran_base_url + DEV_ID + str(id) + ATTRS_PACKET, json={'value': data})
 
-def ue_created(device_descriptor):
+            r.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            print('Error: {}'.format(e))
+            return False
 
-    url = HELIX_URL + 'dev_id:' + str(device_descriptor['id'])
+        return True
 
-    try:
-        r = requests.get(url)
+    def ue_rx_packet(self, id):
+        try:
+            r = requests.get(self.oran_base_url + DEV_ID + str(id))
 
-        r.raise_for_status()
-    except:
-        return False
+            r.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            print('Error: {}'.format(e))
+            return False, None
 
-    return True
+        return True, r.text
 
-def ue_tx_packet(device_descriptor):
+    def __ue_descriptor_init_rand(self):
+        ue_descriptor = dict()
+        ue_descriptor['id'] = random.randint(1, 1000)
+        ue_descriptor['type'] = UE_TYPE[random.randint(0, len(UE_TYPE) - 1)]
+        ue_descriptor['packet_type'] = UE_PACKET_TYPE[random.randint(0, len(UE_PACKET_TYPE) - 1)]
 
-    url = HELIX_URL + 'dev_id:' + str(device_descriptor['id']) + '/attrs/packet'
+        packet_size = 0
+        if (ue_descriptor['packet_type'] == 'plane:control'):
+            packet_size = 10
+        elif (ue_descriptor['type'] == 'eMMB'):
+            packet_size = random.randint(100, 200)
+        elif (ue_descriptor['type'] == 'mMTC'):
+            packet_size = random.randint(4, 7)
+        elif (ue_descriptor['type'] == 'URLLC'):
+            packet_size = random.randint(2, 4)        
 
-    try:
-        r = requests.put(url, json={'value': device_descriptor['packet_data']})
+        letters = string.ascii_letters
+        random_str = ''.join(random.choice(letters) for i in range(packet_size))
+        ue_descriptor['packet_data'] = datetime.now().strftime('%b %d %Y %H:%M:%S') + ' - ' + random_str
 
-        r.raise_for_status()
-    except requests.exceptions.HTTPError as e:
-        print('Error: {}'.format(e))
-        return False
+        return ue_descriptor
 
-    return True
+    def ue_simulation(self):
+        ue_descriptor = self.__ue_descriptor_init_rand()
 
-def ue_rx_packet(device_descriptor):
+        if (not self.ue_created(ue_descriptor['id'])):
+            ret, msg = self.ue_creation(ue_descriptor)
 
-    url = HELIX_URL + 'dev_id:' + str(device_descriptor['id'])
+            if (ret == False):
+                print('Error Creating Device: {}'.format(msg))
+                exit(1)
+        else:
+            self.ue_tx_packet(ue_descriptor['id'], ue_descriptor['packet_data'])
 
-    try:
-        r = requests.get(url)
+        ret, msg = self.ue_rx_packet(ue_descriptor['id'])
+        print(json.dumps(json.loads(msg), indent=4))
 
-        r.raise_for_status()
-    except requests.exceptions.HTTPError as e:
-        print('Error: {}'.format(e))
-        return False, None
-
-    return True, r.text
-
+'''
 if __name__ == '__main__':
 
-    for i in range(5):
 
+    user_equipment = UserEquipment(ORAN_BASE_URL)
+
+    #for i in range(5):
+    while(True):
+
+        '' block comment
         ue_descriptor = ue_descriptor_init_rand()
 
         if (not ue_created(ue_descriptor)):
@@ -110,4 +133,23 @@ if __name__ == '__main__':
             ue_tx_packet(ue_descriptor)
 
         ret, msg = ue_rx_packet(ue_descriptor)
-        print(json.dumps(json.loads(msg), indent=4))    
+        print(json.dumps(json.loads(msg), indent=4))  
+
+        #time.sleep(0.1)  
+        '' block comment
+
+        proc_list = []
+        for i in range(20):
+            # run in processes fashion to collect info faster
+            p = multiprocessing.Process(target=user_equipment.ue_simulation)
+            proc_list.append(p)
+            p.start()
+
+        for proc in proc_list:
+            # join and kill the process
+            proc.join()
+            proc.terminate()
+
+        user_equipment.ue_deletion()
+        time.sleep(1)
+'''
