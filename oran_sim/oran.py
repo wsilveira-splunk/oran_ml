@@ -1,7 +1,6 @@
 import docker
 import multiprocessing
-
-
+import os
 
 class NearRealTimeRIC():
     
@@ -23,6 +22,23 @@ class NearRealTimeRIC():
             return -1
         
         return scale
+
+    def set_NearRealTimeRIC_scale(self, scale):
+        '''
+        # TODO: Scaling the service through the api didnt work
+        try:
+            services = self.client.services.list(filters={'name': 'orion_orion'})
+            service_inspector = self.client.api.inspect_service(services[0].id)
+            mode = {'replicated': {'replicas': scale}}
+            ret = self.client.api.update_service(service=services[0].id, version=services[0].version, mode=mode)
+            print(ret)
+        except docker.errors.APIError as e:
+            print(e)
+            return -1
+        '''
+        stream = os.popen('docker service scale orion_orion={scale}'.format(scale=scale))
+        
+        return True
 
     def get_NearRealTimeRIC_info(self):
         self.NearRealTimeRIC_scale = self.get_NearRealTimeRIC_scale()
