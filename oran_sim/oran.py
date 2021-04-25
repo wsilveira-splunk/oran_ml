@@ -1,11 +1,9 @@
 import docker
-import json
 import multiprocessing
 
-DOCKER_SOCKET = 'unix://var/run/docker.sock'
-DOCKER_API_VERSION = '1.40'
 
-class NearRealTimeRICCollector():
+
+class NearRealTimeRIC():
     
     def __init__(self, docker_socket, docker_api_version):
         self.client = docker.DockerClient(base_url=docker_socket,
@@ -27,15 +25,7 @@ class NearRealTimeRICCollector():
         return scale
 
     def get_NearRealTimeRIC_info(self):
-        if self.NearRealTimeRIC_list == None:
-            return {'Message': 'No NearRealTimeRIC List available. Try running client.update_NearRealTimeRIC_instances()'}
-
-        scale = self.get_NearRealTimeRIC_scale()
-        #if scale != self.NearRealTimeRIC_scale:
-        #    # if scale changed, list of services might have changed
-        #    self.NearRealTimeRIC_scale = scale
-        #    self.NearRealTimeRIC_list = self.get_NearRealTimeRIC_instance_list()
-
+        self.NearRealTimeRIC_scale = self.get_NearRealTimeRIC_scale()
         self.NearRealTimeRIC_list = self.get_NearRealTimeRIC_instance_list()
 
         # get multiprocessing manager to return collected info
@@ -56,7 +46,7 @@ class NearRealTimeRICCollector():
             proc.join()
             proc.terminate()
         
-        NearRealTimeRIC_info['scale'] = scale
+        #NearRealTimeRIC_info['scale'] = self.NearRealTimeRIC_scale
 
         return NearRealTimeRIC_info.copy()
 
@@ -106,6 +96,9 @@ class NearRealTimeRICCollector():
                 'eth0']['rx_bytes']
             container_status[container_name]['tx_bytes'] = container_stats['networks'][
                 'eth0']['tx_bytes']
+
+            # scale
+            container_status[container_name]['scale'] = self.NearRealTimeRIC_scale
 
             # create a entry in the return dictionary with the container name
             # and pass all info

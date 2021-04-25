@@ -7,7 +7,8 @@ import time
 
 from datetime import datetime
 
-ORAN_BASE_URL = "http://143.107.145.46:1026/v2/entities/"
+DEV_ID_RANGE_MIN = 2500
+DEV_ID_RANGE_MAX = 10000
 
 UE_TYPE = ['eMMB', 'mMTC', 'URLLC']
 UE_PACKET_TYPE = ['plane:control', 'plane:user']
@@ -76,7 +77,7 @@ class UserEquipment():
 
     def __ue_descriptor_init_rand(self):
         ue_descriptor = dict()
-        ue_descriptor['id'] = random.randint(1, 1000)
+        ue_descriptor['id'] = random.randint(DEV_ID_RANGE_MIN, DEV_ID_RANGE_MAX)
         ue_descriptor['type'] = UE_TYPE[random.randint(0, len(UE_TYPE) - 1)]
         ue_descriptor['packet_type'] = UE_PACKET_TYPE[random.randint(0, len(UE_PACKET_TYPE) - 1)]
 
@@ -96,7 +97,30 @@ class UserEquipment():
 
         return ue_descriptor
 
-    def ue_simulation(self):
+    def ue_simulation(self, ue_number):
+
+        # get multiprocessing manager to return collected info
+        # in a parallel fashion
+        manager = multiprocessing.Manager()
+        ue_info = manager.dict()
+
+        proc_list = []
+        for i in range(ue_number):
+            # run in processes fashion to collect info faster
+            p = multiprocessing.Process(target=self.__ue_tx_rx, args=(ue_info, ))
+            proc_list.append(p)
+            p.start()
+
+        for proc in proc_list:
+            # join and kill the process
+            proc.join()
+            proc.terminate()
+
+        self.ue_deletion()
+
+        return ue_info.copy()
+
+    def __ue_tx_rx(self, ue_msg):
         ue_descriptor = self.__ue_descriptor_init_rand()
 
         if (not self.ue_created(ue_descriptor['id'])):
@@ -104,9 +128,15 @@ class UserEquipment():
 
             if (ret == False):
                 print('Error Creating Device: {}'.format(msg))
-                exit(1)
+                # TODO: improve this
         else:
             self.ue_tx_packet(ue_descriptor['id'], ue_descriptor['packet_data'])
 
         ret, msg = self.ue_rx_packet(ue_descriptor['id'])
-        print(json.dumps(json.loads(msg), indent=4))
+
+        msg = json.loads(msg)
+        # avoid duplicated info
+        msg_id = msg.pop('id')
+
+        ue_msg[msg_id] = msg
+
