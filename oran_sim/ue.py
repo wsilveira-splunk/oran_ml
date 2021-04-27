@@ -27,6 +27,7 @@ class UserEquipment():
         self.csv_file = None
         self.sim_proc = None
         self.run_sim = False
+        self.unused_ues = list()
 
     def ue_creation(self, device_descriptor):
         payload = dict()
@@ -49,6 +50,7 @@ class UserEquipment():
         return True, None
 
     def ue_create_all(self):
+        self.unused_ues = list()
         for i in range(DEV_ID_RANGE_MIN, self.max_number_ues - 1):
             print('Initializing device dev_id:{}'.format(i))
 
@@ -60,6 +62,7 @@ class UserEquipment():
                 ret, msg = self.ue_creation(ue_descriptor)
 
                 if ret == False:
+                    self.unused_ues.append(i)
                     print('Error creating device dev_id:{} {}'.format(i, msg))
                     print(json.dumps(ue_descriptor, indent=4))
 
@@ -90,7 +93,7 @@ class UserEquipment():
 
             r.raise_for_status()
         except requests.exceptions.HTTPError as e:
-            #print('Error: {}'.format(e))
+            print('Error: {}'.format(e))
             return False
 
         return True
@@ -107,6 +110,7 @@ class UserEquipment():
         return True, r.text
 
     def __ue_descriptor_init_rand(self):
+        '''
         ue_descriptor = dict()
         ue_descriptor['id'] = random.randint(DEV_ID_RANGE_MIN, self.max_number_ues - 1)
         ue_descriptor['type'] = UE_TYPE[random.randint(0, len(UE_TYPE) - 1)]
@@ -125,19 +129,27 @@ class UserEquipment():
         letters = string.ascii_letters
         random_str = ''.join(random.choice(letters) for i in range(packet_size))
         ue_descriptor['packet_data'] = datetime.now().strftime('%b %d %Y %H:%M:%S:%f') + ' - ' + random_str
+        '''
+        ue_descriptor = dict()
+        ue_descriptor['id'] = 1
+        ue_descriptor['type'] = 'eMMB'
+        ue_descriptor['packet_type'] = 'plane:user'
+        ue_descriptor['packet_data'] = 'abcdv'
 
         return ue_descriptor
 
-    def ue_sim_start(self, csv_file, number_ues):
+    def ue_sim_start(self, csv_file, csv_mode, number_ues):
         self.number_ues = number_ues
         self.csv_file = csv_file
-        self.sim_proc = multiprocessing.Process(target=self.__ue_sim)
-
-        with open(self.csv_file, 'w') as f:
-            writer = csv.DictWriter(f, fieldnames=COLUMNS)
-            writer.writeheader()
-        
         self.run_sim = True
+
+        with open(self.csv_file, csv_mode) as f:
+            writer = csv.DictWriter(f, fieldnames=COLUMNS)
+            if csv_mode == 'w':
+                writer.writeheader()
+
+        self.sim_proc = multiprocessing.Process(target=self.__ue_sim)
+                
         self.sim_proc.start()
 
     def ue_sim_stop(self):      
@@ -145,12 +157,16 @@ class UserEquipment():
 
     def ue_sim_update(self, number_ues):      
         self.number_ues = number_ues
+        self.sim_proc.terminate()
+        self.ue_sim_start(self.csv_file, 'a', self.number_ues)
 
     def __ue_sim(self):
         while self.run_sim:
             with open(self.csv_file, 'a') as f:
                 writer = csv.DictWriter(f, fieldnames=COLUMNS)
-                ue_info = self.ue_simulation()
+                ue_info = self.ue_simulation(writer)
+                
+                
                 ts_ue = datetime.now().strftime('%b %d %Y %H:%M:%S')
 
                 for ue_id, ue_data in ue_info.items():
@@ -163,13 +179,13 @@ class UserEquipment():
                         new_row['UEPACKETVALUE'] = ue_data['packet']['value']
 
                     writer.writerow(new_row)
-
+                
                 #print(json.dumps(ue_info, indent=4))
         
-        self.sim_proc.stop()
+        self.sim_proc.join()
         self.sim_proc.terminate()
 
-    def ue_simulation(self):
+    def ue_simulation(self, writer):
 
         # get multiprocessing manager to return collected info
         # in a parallel fashion
@@ -179,9 +195,12 @@ class UserEquipment():
         proc_list = []
         for i in range(self.number_ues):
             # run in processes fashion to collect info faster
-            p = multiprocessing.Process(target=self.__ue_tx_rx, args=(ue_info, ))
+            p = multiprocessing.Process(target=self.__ue_tx_rx, args=(ue_info, writer))
             proc_list.append(p)
             p.start()
+
+        #while self.run_sim:
+        #    pass
 
         for proc in proc_list:
             # join and kill the process
@@ -192,46 +211,66 @@ class UserEquipment():
 
         return ue_info.copy()
 
-    def __ue_tx_rx(self, ue_msg):
-        ue_descriptor = self.__ue_descriptor_init_rand()
+    def __ue_tx_rx(self, ue_msg, writer):
+        #while self.run_sim:
+            error = False
+            ue_descriptor = self.__ue_descriptor_init_rand()
 
-        '''
-        if (not self.ue_created(ue_descriptor['id'])):
-            ret, msg = self.ue_creation(ue_descriptor)
+            '''
+            if (not self.ue_created(ue_descriptor['id'])):
+                ret, msg = self.ue_creation(ue_descriptor)
 
-            if (ret == False):
-                print('Error Creating Device: {}'.format(msg))
-                # TODO: improve this
-                exit(1)
-        else:
-            self.ue_tx_packet(ue_descriptor['id'], ue_descriptor['packet_data'])
-        '''
+                if (ret == False):
+                    print('Error Creating Device: {}'.format(msg))
+                    # TODO: improve this
+                    exit(1)
+            else:
+                self.ue_tx_packet(ue_descriptor['id'], ue_descriptor['packet_data'])
+            '''
 
-        ret = self.ue_tx_packet(ue_descriptor['id'], ue_descriptor['packet_data'])
+            ret = self.ue_tx_packet(ue_descriptor['id'], ue_descriptor['packet_data'])
 
-        #ret, msg = self.ue_rx_packet(ue_descriptor['id'])
+            #ret, msg = self.ue_rx_packet(ue_descriptor['id'])
 
-        if ret == False:
-            ue_msg[ue_descriptor['id']] = {'type': 'error'}
-        else:
-            ret, msg = self.ue_rx_packet(ue_descriptor['id'])
-
-            #ue_descriptor['packet'] = {}
-            #ue_descriptor['packet']['type'] = ue_descriptor.pop('packet_type')
-            #ue_descriptor['packet']['value'] = ue_descriptor.pop('packet_data')
-            #msg = ue_descriptor
-            # avoid duplicated info
-            #msg_id = msg.pop('id')
-
-            
             if ret == False:
                 ue_msg[ue_descriptor['id']] = {'type': 'error'}
-            
-            
-            msg = json.loads(msg)
-            # avoid duplicated info
-            msg_id = msg.pop('id')
+                ue_descriptor['type'] = 'error'
+                error = True
+            else:
+                ret, msg = self.ue_rx_packet(ue_descriptor['id'])
 
-            ue_msg[msg_id] = msg
+                #ue_descriptor['packet'] = {}
+                #ue_descriptor['packet']['type'] = ue_descriptor.pop('packet_type')
+                #ue_descriptor['packet']['value'] = ue_descriptor.pop('packet_data')
+                #msg = ue_descriptor
+                # avoid duplicated info
+                #msg_id = msg.pop('id')
+
+                
+                if ret == False:
+                    ue_msg[ue_descriptor['id']] = {'type': 'error'}
+                    ue_descriptor['type'] = 'error'
+                    error = True
+                else:
+                
+                    msg = json.loads(msg)
+                    # avoid duplicated info
+                    msg_id = msg.pop('id')
+
+                    ue_msg[msg_id] = msg
+
+            '''
+            ts_ue = datetime.now().strftime('%b %d %Y %H:%M:%S')
+
+            new_row = dict()
+            new_row['TS'] = ts_ue
+            new_row['UEID'] = ue_descriptor['id']
+            new_row['UETYPE'] = ue_descriptor['type']
+            if error == False:
+                new_row['UEPACKETTYPE'] = ue_descriptor['packet_type']
+                new_row['UEPACKETVALUE'] = ue_descriptor['packet_data']
+
+            writer.writerow(new_row)
+            '''
 
 

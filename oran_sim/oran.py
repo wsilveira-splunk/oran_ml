@@ -2,6 +2,8 @@ import docker
 import multiprocessing
 import os
 
+from collections import OrderedDict
+
 class NearRealTimeRIC():
     
     def __init__(self, docker_socket, docker_api_version):
@@ -72,7 +74,7 @@ class NearRealTimeRIC():
             # get container status dict
             container_stats = container.stats(stream=False)
 
-            container_status = dict()
+            container_status = OrderedDict()
 
             container_name = container_stats['name']
             container_status[container_name] = dict()
