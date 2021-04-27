@@ -16,13 +16,19 @@ ORAN_ENTITIES_URL = ORAN_BASE_URL + 'v2/entities'
 ORAN_DEVICE_UPT_ATTR = ORAN_BASE_URL + 'v2/entities/' + UE_DEVICE_ID + '/attrs?options=forcedUpdate'
 ORAN_VERSION = ORAN_BASE_URL + '/version'
 ORAN_DEVICE_UPT_ATTR_PACKET = ORAN_BASE_URL + 'v2/entities/' + UE_DEVICE_ID + '/attrs/packet/value?options=forcedUpdate'
-
+ORAN_CONTROL_CHANNEL = ORAN_ENTITIES_URL + '/control__channel_1/attrs?options=forcedUpdate'
 
 url1 = "http://143.107.145.46:1026/v2/entities"
 url2 = "http://143.107.145.46:1026/v2/entities/device_1/attrs?options=forcedUpdate"
 url3 = "http://143.107.145.46:1026/version"
 url4 = "http://143.107.145.46:1026/v2/entities/device_1/attrs/time/value?options=forcedUpdate"
 
+op_modes_table ={
+    'CPU_CORES' : [1, 2, 3, 4],
+    'POST_CALLS': [25, 50, 75, 100],
+    'DELAY': [0.001, 0.0025, 0.005, 0.0075],
+    'PACKET_DATA_SIZE': [1, 10, 30, 100]
+}
 
 def create(url):
     payload_create = {
@@ -77,27 +83,44 @@ def update_post(url, temperature, time):
         print('Error updating device: {}'.format(response.text))
 
 def update_post_pool(time):
+
     payload_update = {
         'packet': {
             'type': 'string',
-            'value': 'abcdcd'
+            'value': ''.join(['abc' for i in range(packet_size)])
         },
         'time': {
             'type': 'float',
-            'value': time
+            'value': str(datetime.now().timestamp())
         }
     }
 
-    #payload_update = "{\r\n  \"temperature\": {\r\n  \"type\": \"float\",\r\n  \"value\":" + temperature + "\r\n    }\r\n,\r\n  \"time\": {\r\n  \"type\": \"float\",\r\n  \"value\":" + time + "\r\n\t}\r\n}\r\n"
+    try:
+        response = requests.request("POST",
+                                    ORAN_DEVICE_UPT_ATTR,
+                                    headers={'Content-Type': 'application/json'},
+                                    data=json.dumps(payload_update))
 
-    response = requests.request("POST",
-                                ORAN_DEVICE_UPT_ATTR,
-                                headers={'Content-Type': 'application/json'},
-                                data=json.dumps(payload_update))
-                                #data=payload_update)
-    #data=payload_update)
-    if response.status_code >= 400:
-        print('Error updating device: {}'.format(response.text))
+        if response.status_code >= 400:
+            print('Error updating device: {}'.format(response.text))
+    except:
+        pass
+
+def get_op_mode():
+    response = requests.request("GET",
+                                ORAN_CONTROL_CHANNEL,
+                                headers={'Accept': 'application/json'},
+                                data={})
+
+    response = json.loads(response.text)
+
+    op_modes_desc = dict()
+    op_modes_desc['CPU_CORES'] = response['CPU_CORES']['value']
+    op_modes_desc['POST_CALLS'] = response['POST_CALLS']['value']
+    op_modes_desc['DELAY'] = response['DELAY']['value']
+    op_modes_desc['PACKET_DATA_SIZE'] = response['PACKET_DATA_SIZE']['value']
+
+    return op_modes_desc
 
 def get(url):
 
@@ -129,6 +152,7 @@ def health(url):
 
 
 while 1:
+    print("")
     print("Helix Multi-layered Mockup - IoT TX Departure\n")
     print("1 - Create Entity")
     print("2 - Update Entity")
@@ -139,6 +163,7 @@ while 1:
     print("7 - PUT  - persistent    NEW")
     print("8 - POST - persistent    NEW")
     print("9 - POST - pool of workers")
+    print("10 - CHECK CONTROL CHANNEL")
     print("0 - Exit")
     number = input("Choose an option: ")
     op = int(number)
@@ -230,15 +255,26 @@ while 1:
             #print(num)
 
     elif op == 9:
-        input_range = input('Enter Number of Posts: ')
-        input_cpu = input('CPU CORES: ')
-        timestamp = datetime.now().timestamp()
-        timestamp_list = [str(timestamp + i) for i in range(int(input_range))]
-        print(timestamp_list)
-        print(multiprocessing.cpu_count())
-        for i in range(10):
-            p = Pool(int(input_cpu))
-            p.map(update_post_pool, timestamp_list)
-            time.sleep(0.001)
+        while True:
+            op_modes_desc = get_op_mode()
+
+            num_cores = op_modes_table['CPU_CORES'][op_modes_desc['CPU_CORES']]
+            packet_size = op_modes_table['PACKET_DATA_SIZE'][op_modes_desc['PACKET_DATA_SIZE']]
+            delay = op_modes_table['DELAY'][op_modes_desc['DELAY']]
+            post_calls = op_modes_table['POST_CALLS'][op_modes_desc['POST_CALLS']]
+
+            post_calls_list = [i for i in range(post_calls)]
+
+            print('Core: {} Packet Size: {} Delay: {} Post Calls: {}'.format(num_cores, packet_size, delay, post_calls))
+
+            for i in range(10):
+                p = Pool(num_cores)
+                p.map(update_post_pool, post_calls_list)
+                p.terminate()
+                time.sleep(delay)        
+
+    elif op == 10:
+        op_modes_desc = get_op_mode()
+        print(json.dumps(op_modes_desc, indent=4))    
     else:
         break

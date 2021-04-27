@@ -22,7 +22,7 @@ class helix(Resource):
     x = datetime.fromtimestamp(departure)#.strftime('%Y-%m-%d')
     dt = now - x 
     ms = (dt.days * 24 * 60 * 60 + dt.seconds) * 1000 + dt.microseconds / 1000.0
-    values.append(ms)
+    #values.append(ms)
     print(ms)
     #print(json.dumps(payload, indent=4))
     return '', 200
