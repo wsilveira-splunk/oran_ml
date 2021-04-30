@@ -1,6 +1,6 @@
 from oran import NearRealTimeRIC as RIC
-from ue_v2 import UserEquipment as UE
 from datetime import datetime, timedelta
+from rl import RL
 
 from collections import OrderedDict
 
@@ -8,6 +8,7 @@ import requests
 import json
 import csv
 import time
+import numpy as np
 
 ORAN_BASE_URL = "http://143.107.145.46:1026/v2/entities/"
 DOCKER_SOCKET = 'unix://var/run/docker.sock'
@@ -47,9 +48,29 @@ def update_control_channel():
     else:
         print('Error Updating Control Channel: {}'.format(response.text))
 
+def get_state(cpu_load):
+    state = 'NormalLoad'
+    if cpu_load >= 1.5:
+        state = 'OverLoaded'
+    elif cpu_load <= 0.95 and cpu_load >= 0.1:
+        state = 'UnderLoaded'
+
+    return state
+
+def set_action(action, oran):
+
+    scale = oran.get_NearRealTimeRIC_scale()
+    if action == 'ScaleDown':
+        if scale > 6:
+            oran.set_NearRealTimeRIC_scale(scale - 2)
+    elif action == 'ScaleUp':
+        #if scale < 14
+        oran.set_NearRealTimeRIC_scale(scale + 2)
+
 
 if __name__ == '__main__':
     oran = RIC(DOCKER_SOCKET, DOCKER_API_VERSION)
+    rl_model = RL()
     
     ts = datetime.now()
     temp_stab = ts
@@ -57,7 +78,7 @@ if __name__ == '__main__':
     count_scale_down = 0
     count_scale_up = 0
 
-    oran.set_NearRealTimeRIC_scale(6)
+    oran.set_NearRealTimeRIC_scale(8)
 
     with open('oran_sim - {}.csv'.format(ts.strftime('%b %d %Y %H:%M:%S')), 'w') as f:
         writer = csv.DictWriter(f, fieldnames=COLUMNS)
@@ -92,31 +113,22 @@ if __name__ == '__main__':
             if count_perc_cpu_usage > 0:
                 oran_info['avg_perc_cpu_usage'] = round(avg_perc_cpu_usage / count_perc_cpu_usage, 2)
             
-            writer.writerow({'TS': ts_oran, 'ORANAVGCPUUSAGE': oran_info['avg_perc_cpu_usage'], 'ORANSERVICES': oran_info['count_perc_cpu_usage']})
+            writer.writerow({'TS': ts_oran, 'ORANAVGCPUUSAGE': oran_info['avg_perc_cpu_usage'], 'ORANSERVICES': oran_info['count_perc_cpu_usage'], 'ORANSCALE': oran_service_info['scale']})
 
             if ts > temp_stab:
-                if oran_info['avg_perc_cpu_usage'] > 1.5:
-                    count_scale_up += 1
-                    count_scale_down = 0
-                elif oran_info['avg_perc_cpu_usage'] < 0.9 and oran_info['avg_perc_cpu_usage'] > 0.1:
-                    count_scale_down += 1
-                    count_scale_up = 0
-                
-            if count_scale_up > 3:
-                oran.set_NearRealTimeRIC_scale(oran.get_NearRealTimeRIC_scale() + 2)
-                count_scale_up = 0
                 temp_stab = ts + timedelta(seconds=5)
-            elif count_scale_down > 3:
-                oran.set_NearRealTimeRIC_scale(oran.get_NearRealTimeRIC_scale() - 2)
-                count_scale_down = 0
-                temp_stab = ts + timedelta(seconds=5)
+                state = get_state(oran_info['avg_perc_cpu_usage'])
+                action = rl_model.get_action(state)
+
+                print('State: {} Action: {}'.format(state, action))
+
+                set_action(action, oran)
+                print(rl_model.get_q())
+
 
             oran_info = OrderedDict(sorted(oran_info.items()))
 
             print(json.dumps(oran_info['/mongo_controller.1.bqcp6ca7ytfrz3l3dc2enwxu3']['scale'], indent=4))
             print(json.dumps(oran_info['avg_perc_cpu_usage'], indent=4))
-            print(json.dumps(oran_info, indent=4))
-            print('Count up: {} Count down: {}'.format(count_scale_up, count_scale_down))
             print('ts: {} temp_stab: {}'.format(ts, temp_stab))
-            #print('Number of UEs: {}'.format(number_ues))
             #exit(1)
