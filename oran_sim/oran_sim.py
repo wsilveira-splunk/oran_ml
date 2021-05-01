@@ -78,7 +78,7 @@ if __name__ == '__main__':
     count_scale_down = 0
     count_scale_up = 0
 
-    oran.set_NearRealTimeRIC_scale(8)
+    oran.set_NearRealTimeRIC_scale(20)
 
     with open('oran_sim - {}.csv'.format(ts.strftime('%b %d %Y %H:%M:%S')), 'w') as f:
         writer = csv.DictWriter(f, fieldnames=COLUMNS)
@@ -122,8 +122,8 @@ if __name__ == '__main__':
 
                 print('State: {} Action: {}'.format(state, action))
 
-                set_action(action, oran)
-                print(rl_model.get_q())
+                #set_action(action, oran)
+                #print(rl_model.get_q())
 
 
             oran_info = OrderedDict(sorted(oran_info.items()))

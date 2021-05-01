@@ -61,7 +61,7 @@ class RL():
         return self.q[state][opt_action_idx]
 
     def __upt_Q(self, action, state):
-        #if not self.__q_stable():
+        if not self.__q_stable():
             reward = self.__policy(action, state)
 
             new_q_state_action = reward + self.discount * self.__max_Q(state)
